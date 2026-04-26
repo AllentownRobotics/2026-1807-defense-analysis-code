@@ -313,20 +313,13 @@ def analyze_frame(df: pd.DataFrame, ridge_alpha: float) -> pd.DataFrame:
         axis=1,
     ).reset_index().rename(columns={"index": "team_key"})
 
-    # Composite defensive specialist index, with reliability shrinkage.
+    # Composite defensive specialist index, with reliability shrinkage on the final score.
     max_matches = max(int(ratings["match_count"].max()), 1)
-    max_sup_samples = max(int(ratings["suppression_samples"].max()), 1)
     ratings["sample_reliability"] = np.sqrt(ratings["match_count"] / max_matches)
-    ratings["suppression_reliability"] = np.sqrt(
-        ratings["suppression_samples"] / max_sup_samples
-    )
-    ratings["suppression_rating_pct_shrunk"] = (
-        ratings["suppression_rating_pct"] * ratings["suppression_reliability"]
-    )
 
     ratings["defensive_specialist_index"] = (
         0.50 * zscore(ratings["ridge_defense"])
-        + 0.30 * zscore(ratings["suppression_rating_pct_shrunk"])
+        + 0.30 * zscore(ratings["suppression_rating_pct"])
         + 0.20 * zscore(ratings["avg_match_suppression_pct"])
     )
     ratings["defensive_specialist_index_shrunk"] = (
@@ -366,7 +359,6 @@ RANKED_COLUMNS = [
     "rank_suppression_abs_best",
     "rank_suppression_pct_best",
     "rank_avg_match_suppression_pct_best",
-    "suppression_rating_pct_shrunk",
     "suppression_samples",
 ]
 

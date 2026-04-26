@@ -11,6 +11,10 @@ Mid-Atlantic district data but works on any TBA-style match set.
   CSVs into `frc_defense_output/`.
 - `summarize_frc_dataset.py` — prints summary stats for a dataset and
   optionally for a single team.
+- `defender_impact_analysis.py` — for each team in a target Worlds division,
+  finds every 2026 match they played against a top-10 defender from any
+  district and reports the score drop with the TBA match key for video
+  review. See section below.
 
 ## Setup
 
@@ -166,17 +170,11 @@ Defined at the top of `analyze_frc_defense.py`:
 
 ### Reliability shrinkage
 
-Two factors in `[0, 1]`:
+One factor in `[0, 1]` applied to the final composite, to pull down ratings
+from teams with few matches:
 
 ```
-sample_reliability      = sqrt(match_count / max(match_count))
-suppression_reliability = sqrt(suppression_samples / max(suppression_samples))
-```
-
-Used to shrink ratings that come from sparse data:
-
-```
-suppression_rating_pct_shrunk     = suppression_rating_pct * suppression_reliability
+sample_reliability                = sqrt(match_count / max(match_count))
 defensive_specialist_index_shrunk = defensive_specialist_index * sample_reliability
 ```
 
@@ -185,7 +183,7 @@ defensive_specialist_index_shrunk = defensive_specialist_index * sample_reliabil
 ```
 defensive_specialist_index =
       0.50 * zscore(ridge_defense)
-    + 0.30 * zscore(suppression_rating_pct_shrunk)
+    + 0.30 * zscore(suppression_rating_pct)
     + 0.20 * zscore(avg_match_suppression_pct)
 ```
 
@@ -214,6 +212,80 @@ The shrunk version `defensive_specialist_index_shrunk` is what
   Requires `TBA_AUTH_KEY`. With `--refresh`, `--matches-csv` is optional.
 - `--ridge-alpha FLOAT` — ridge regularization strength, default `10.0`.
 - `--min-matches INT` — drop teams with fewer alliance appearances, default `1`.
+
+## Defender impact analysis (Worlds division prep)
+
+`defender_impact_analysis.py` is purpose-built for "which top defenders shut
+down our division's top scorers, and which specific matches should the kids
+go watch?"
+
+```bash
+export TBA_AUTH_KEY="..."
+python defender_impact_analysis.py                          # uses cached district CSVs if present
+python defender_impact_analysis.py --refresh                # re-pull all districts
+python defender_impact_analysis.py --newton-event-key 2026new --top-defenders-per-district 10
+```
+
+What it does:
+
+1. Pulls all 2026 districts (one CSV per district under `tba_output/`).
+2. Pulls all 2026 Regional events as a single pool (`matches_2026regionals.csv`)
+   so teams from non-district areas (CA outside the CA district, FL, TX, MN,
+   Brazil, etc.) also get analyzed.
+3. Runs `analyze_frc_defense` per district and on the regional pool
+   (quals-only, event-normalized) and takes the top N defenders by
+   `defensive_specialist_index_shrunk` from each.
+4. Pulls the team list for `--newton-event-key` (default `2026new`).
+5. Maps each Newton team to whichever pool they played in most (a specific
+   district, or the regional pool labeled `2026regionals`).
+6. For every match a Newton team played in that pool (quals + elims), records
+   any encounter where the opposing alliance contained a top-N defender from
+   the same pool, including expected score (from the pool's `ridge_offense`),
+   actual score, suppression, and TBA match key.
+
+The script assumes there are no cross-pool encounters: each Newton team is only
+checked against the top defenders from their own home pool. In 2026 this is
+effectively always true — district teams almost never play across districts,
+and the regional pool is its own world.
+
+Outputs in `frc_defense_output/`:
+
+- `newton_high_scorers_summary.csv` — one row per Newton team with
+  `home_district` (district key, or `2026regionals` for regional teams),
+  `ridge_offense`, `avg_score`, count of encounters with top defenders,
+  average suppression, biggest single suppression match.
+- `newton_defender_encounters.csv` — one row per (Newton team × match against
+  a top defender), sorted by suppression descending, with `match_key`,
+  `tba_url`, defender(s), expected vs actual.
+- `newton_roster_defenders.csv` — Newton-roster teams ranked by their home-
+  pool defensive metrics. Forward-looking: who you'll actually face on
+  the Newton field, with their pre-Worlds defensive pedigree.
+
+### Newton teams without district matches
+
+Most Newton teams come from one of the 14 official 2026 districts. The
+remainder are tagged in `home_district` as `2026regionals` (analyzed against
+the all-regionals pool) or left blank (no 2026 match data on TBA at all).
+
+Regional-only Newton teams (`home_district == 2026regionals`):
+
+```
+frc180   frc233   frc386   frc424   frc695   frc1108  frc1796  frc1884
+frc1902  frc2052  frc2783  frc2996  frc3044  frc3276  frc3354  frc3966
+frc4253  frc4400  frc5736  frc5948  frc6352  frc6436  frc6647  frc6988
+frc9029  frc9067  frc10291 frc10903
+```
+
+Newton teams with no TBA match data yet (blank `home_district`):
+
+```
+frc1577  frc4590  frc5951  frc10935
+```
+
+These four are all from the Israel district (`2026isr`), whose match results
+have not been posted to TBA at the time of writing. Re-run with `--refresh`
+once Israeli matches appear and they will populate.
+
 
 ## Limitations
 

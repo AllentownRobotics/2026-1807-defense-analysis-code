@@ -178,6 +178,10 @@ def pull_to_csv(
     if scope == "fma":
         events = client.get_district_events(district_key)
         scope_slug = district_key
+    elif scope == "regionals":
+        all_events = client.get_events_for_year(year)
+        events = [e for e in all_events if e.get("event_type") == 0]
+        scope_slug = f"{year}regionals"
     else:
         events = client.get_events_for_year(year)
         scope_slug = f"{year}_all"
@@ -221,7 +225,7 @@ def pull_to_csv(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pull 2026 FRC matches from TBA")
-    parser.add_argument("--scope", choices=["fma", "all"], default="fma")
+    parser.add_argument("--scope", choices=["fma", "all", "regionals"], default="fma")
     parser.add_argument("--year", type=int, default=2026)
     parser.add_argument("--district-key", default="2026fma")
     parser.add_argument("--outdir", default="tba_output")
